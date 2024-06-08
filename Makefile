@@ -178,6 +178,12 @@ devnet-up: pre-devnet ## Starts the local devnet
 	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=.
 .PHONY: devnet-up
 
+devnet-up-interop: pre-devnet
+	./ops/scripts/newer-file.sh .devnet/allocs-l1.json ./packages/contracts-bedrock \
+		|| make devnet-allocs-interop
+	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=. --interop
+.PHONY: devnet-up-interop
+
 devnet-test: pre-devnet ## Runs tests on the local devnet
 	make -C op-e2e test-devnet
 .PHONY: devnet-test
@@ -198,7 +204,11 @@ devnet-allocs: pre-devnet ## Generates allocations for the local devnet
 	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=. --allocs
 .PHONY: devnet-allocs
 
-devnet-logs: ## Displays logs for the local devnet
+devnet-allocs-interop: pre-devnet
+	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=. --allocs --interop
+
+devnet-logs:
+>>>>>>> f518ecb66 (Interop devnet draft)
 	@(cd ./ops-bedrock && docker compose logs -f)
 .PHONY: devnet-logs
 

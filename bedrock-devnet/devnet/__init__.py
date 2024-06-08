@@ -12,12 +12,14 @@ from multiprocessing import Process, Queue
 import concurrent.futures
 from collections import namedtuple
 
+import devnet.log_setup # pylint: disable=unused-import
 
 pjoin = os.path.join
 
 parser = argparse.ArgumentParser(description='Bedrock devnet launcher')
 parser.add_argument('--monorepo-dir', help='Directory of the monorepo', default=os.getcwd())
 parser.add_argument('--allocs', help='Only create the allocs and exit', type=bool, action=argparse.BooleanOptionalAction)
+parser.add_argument('--interop', help='Deploy the interop devnet', type=bool, action=argparse.BooleanOptionalAction)
 
 log = logging.getLogger()
 
@@ -29,6 +31,9 @@ DEVNET_NO_BUILD = os.getenv('DEVNET_NO_BUILD') == "true"
 DEVNET_L2OO = os.getenv('DEVNET_L2OO') == "true"
 DEVNET_PLASMA = os.getenv('DEVNET_PLASMA') == "true"
 GENERIC_PLASMA = os.getenv('GENERIC_PLASMA') == "true"
+
+CHAIN_ID = 901
+INTEROP_CHAIN_ID = 902
 
 class Bunch:
     def __init__(self, **kwds):
@@ -67,8 +72,12 @@ def main():
     ops_bedrock_dir = pjoin(monorepo_dir, 'ops-bedrock')
     deploy_config_dir = pjoin(contracts_bedrock_dir, 'deploy-config')
     devnet_config_path = pjoin(deploy_config_dir, 'devnetL1.json')
+    interop_devnet_config_path = pjoin(deploy_config_dir, 'devnetL1-interop.json')
     devnet_config_template_path = pjoin(deploy_config_dir, 'devnetL1-template.json')
     ops_chain_ops = pjoin(monorepo_dir, 'op-chain-ops')
+
+    interop_deployment_dir = pjoin(contracts_bedrock_dir, 'deployments', 'interop')
+    interop_devnet_config_path = pjoin(deploy_config_dir, 'devnetL1-interop.json')
 
     paths = Bunch(
       mono_repo_dir=monorepo_dir,
@@ -88,14 +97,26 @@ def main():
       allocs_l1_path=pjoin(devnet_dir, 'allocs-l1.json'),
       addresses_json_path=pjoin(devnet_dir, 'addresses.json'),
       sdk_addresses_json_path=pjoin(devnet_dir, 'sdk-addresses.json'),
-      rollup_config_path=pjoin(devnet_dir, 'rollup.json')
+      rollup_config_path=pjoin(devnet_dir, 'rollup.json'),
+      # interop L2 devnet paths.
+      interop_l1_deployments_path=pjoin(deployment_dir, '.deploy-interop'),
+      interop_devnet_config_path=interop_devnet_config_path,
+      interop_genesis_l2_path=pjoin(devnet_dir, 'genesis-l2-interop.json'),
+      interop_addresses_json_path=pjoin(devnet_dir, 'addresses-interop.json'),
+      interop_rollup_config_path=pjoin(devnet_dir, 'rollup-interop.json')
     )
 
     os.makedirs(devnet_dir, exist_ok=True)
 
     if args.allocs:
-        devnet_l1_allocs(paths)
-        devnet_l2_allocs(paths)
+        devnet_l1_allocs(paths, interop=args.interop)
+        devnet_l2_allocs(CHAIN_ID, paths.l1_deployments_path, paths.devnet_config_path,
+                         paths.devnet_dir, paths.contracts_bedrock_dir)
+        if args.interop:
+            log.info("Generating interop L2 allocs")
+            devnet_l2_allocs(INTEROP_CHAIN_ID,
+                            paths.interop_l1_deployments_path, paths.interop_devnet_config_path,
+                            paths.devnet_dir, paths.contracts_bedrock_dir, interop=True)
         return
 
     git_commit = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
@@ -115,9 +136,9 @@ def main():
         })
 
     log.info('Devnet starting')
-    devnet_deploy(paths)
+    devnet_deploy(paths, interop=args.interop)
 
-def init_devnet_l1_deploy_config(paths, update_timestamp=False):
+def init_devnet_l1_deploy_config(paths, interop=False, update_timestamp=False):
     deploy_config = read_json(paths.devnet_config_template_path)
     if update_timestamp:
         deploy_config['l1GenesisBlockTimestamp'] = '{:#x}'.format(int(time.time()))
@@ -127,11 +148,36 @@ def init_devnet_l1_deploy_config(paths, update_timestamp=False):
         deploy_config['usePlasma'] = True
     if GENERIC_PLASMA:
         deploy_config['daCommitmentType'] = "GenericCommitment"
+
+    # Make another copy of the deploy config with different chain id for the interop devnet.
+    if interop:
+        deploy_config['l2ChainID'] = INTEROP_CHAIN_ID
+        write_json(paths.interop_devnet_config_path, deploy_config)
+
+    deploy_config['l2ChainID'] = CHAIN_ID
     write_json(paths.devnet_config_path, deploy_config)
 
-def devnet_l1_allocs(paths):
+def devnet_l1_allocs(paths, interop=False):
     log.info('Generating L1 genesis allocs')
-    init_devnet_l1_deploy_config(paths)
+    init_devnet_l1_deploy_config(paths, interop=interop)
+
+    if interop:
+        fqn = 'scripts/deploy/InteropDeploy.s.sol:InteropDeploy'
+        run_command([
+            "forge", "script", fqn, "--sig", "runWithStateDump()", "--sender",
+            "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+        ], env={
+            "DEPLOYMENT_OUTFILE": paths.l1_deployments_path,
+            "DEPLOY_CONFIG_PATH": paths.devnet_config_path,
+            "INTEROP_DEPLOYMENT_OUTFILE": paths.interop_l1_deployments_path,
+            "INTEROP_DEPLOY_CONFIG_PATH": paths.interop_devnet_config_path,
+            "STATE_DUMP_PATH": paths.forge_l1_dump_path,
+        }, cwd=paths.contracts_bedrock_dir)
+
+        shutil.move(src=paths.forge_l1_dump_path, dst=paths.allocs_l1_path)
+        shutil.copy(src=paths.l1_deployments_path, dst=paths.addresses_json_path)
+        shutil.copy(src=paths.interop_l1_deployments_path, dst=paths.interop_addresses_json_path)
+        return
 
     fqn = 'scripts/deploy/Deploy.s.sol:Deploy'
     run_command([
@@ -140,8 +186,8 @@ def devnet_l1_allocs(paths):
         # (which we need to enable the Custom Gas Token feature).
         'forge', 'script', fqn, "--sig", "runWithStateDump()", "--sender", "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
     ], env={
-      'DEPLOYMENT_OUTFILE': paths.l1_deployments_path,
-      'DEPLOY_CONFIG_PATH': paths.devnet_config_path,
+        'DEPLOYMENT_OUTFILE': paths.l1_deployments_path,
+        'DEPLOY_CONFIG_PATH': paths.devnet_config_path,
     }, cwd=paths.contracts_bedrock_dir)
 
     shutil.move(src=paths.forge_l1_dump_path, dst=paths.allocs_l1_path)
@@ -149,28 +195,32 @@ def devnet_l1_allocs(paths):
     shutil.copy(paths.l1_deployments_path, paths.addresses_json_path)
 
 
-def devnet_l2_allocs(paths):
-    log.info('Generating L2 genesis allocs, with L1 addresses: '+paths.l1_deployments_path)
+def devnet_l2_allocs(chainid, l1_deployments_path, devnet_config_path, devnet_dir, contracts_bedrock_dir, interop=False):
+    log.info('Generating L2 genesis allocs, with L1 addresses: '+l1_deployments_path)
 
     fqn = 'scripts/L2Genesis.s.sol:L2Genesis'
     run_command([
         'forge', 'script', fqn, "--sig", "runWithAllUpgrades()"
     ], env={
-      'CONTRACT_ADDRESSES_PATH': paths.l1_deployments_path,
-      'DEPLOY_CONFIG_PATH': paths.devnet_config_path,
-    }, cwd=paths.contracts_bedrock_dir)
+        'CONTRACT_ADDRESSES_PATH': l1_deployments_path,
+        'DEPLOY_CONFIG_PATH': devnet_config_path,
+    }, cwd=contracts_bedrock_dir)
 
     # For the previous forks, and the latest fork (default, thus empty prefix),
     # move the forge-dumps into place as .devnet allocs.
     for fork in FORKS:
-        input_path = pjoin(paths.contracts_bedrock_dir, f"state-dump-901-{fork}.json")
-        output_path = pjoin(paths.devnet_dir, f'allocs-l2-{fork}.json')
+        input_path = pjoin(contracts_bedrock_dir, f"state-dump-{chainid}-{fork}.json")
+        # TODO: Consider using chainid instead of the `-interop` suffix for each chains. For now we keep the
+        # filename consistent with the current CI/CD pipeline
+        if interop:
+            output_path = pjoin(devnet_dir, f'allocs-l2-{fork}-interop.json')
+        else:
+            output_path = pjoin(devnet_dir, f'allocs-l2-{fork}.json')
         shutil.move(src=input_path, dst=output_path)
-        log.info("Generated L2 allocs: "+output_path)
+        log.info("Generated L2 allocs: " + output_path)
 
 
-# Bring up the devnet where the contracts are deployed to L1
-def devnet_deploy(paths):
+def deploy_l1(paths):
     if os.path.exists(paths.genesis_l1_path):
         log.info('L1 genesis already generated.')
     else:
@@ -209,28 +259,40 @@ def devnet_deploy(paths):
     wait_up(8545)
     wait_for_rpc_server('127.0.0.1:8545')
 
-    if os.path.exists(paths.genesis_l2_path):
+
+def generate_l2_genesis(chainid, genesis_l2_path, l1_deployments_path,
+                        devnet_config_path, addresses_json_path, rollup_config_path, paths, interop=False):
+    if os.path.exists(genesis_l2_path):
         log.info('L2 genesis and rollup configs already generated.')
     else:
         log.info('Generating L2 genesis and rollup configs.')
-        l2_allocs_path = pjoin(paths.devnet_dir, f'allocs-l2-{FORKS[-1]}.json')
+        if interop:
+            l2_allocs_path = pjoin(paths.devnet_dir, f'allocs-l2-{FORKS[-1]}-interop.json')
+        else:
+            l2_allocs_path = pjoin(paths.devnet_dir, f'allocs-l2-{FORKS[-1]}.json')
         if os.path.exists(l2_allocs_path) == False or DEVNET_L2OO == True:
             # Also regenerate if L2OO.
             # The L2OO flag may affect the L1 deployments addresses, which may affect the L2 genesis.
-            devnet_l2_allocs(paths)
+            devnet_l2_allocs(chainid, l1_deployments_path, devnet_config_path,
+                             paths.devnet_dir, paths.contracts_bedrock_dir, interop=interop)
         else:
             log.info('Re-using existing L2 allocs.')
 
         run_command([
             'go', 'run', 'cmd/main.go', 'genesis', 'l2',
             '--l1-rpc', 'http://localhost:8545',
-            '--deploy-config', paths.devnet_config_path,
+            '--deploy-config', devnet_config_path,
             '--l2-allocs', l2_allocs_path,
-            '--l1-deployments', paths.addresses_json_path,
-            '--outfile.l2', paths.genesis_l2_path,
-            '--outfile.rollup', paths.rollup_config_path
+            '--l1-deployments', addresses_json_path,
+            '--outfile.l2', genesis_l2_path,
+            '--outfile.rollup', rollup_config_path
         ], cwd=paths.op_node_dir)
 
+
+def deploy_l2(paths):
+    generate_l2_genesis(CHAIN_ID,
+                        paths.genesis_l2_path, paths.l1_deployments_path,
+                        paths.devnet_config_path, paths.addresses_json_path, paths.rollup_config_path, paths)
     rollup_config = read_json(paths.rollup_config_path)
     addresses = read_json(paths.addresses_json_path)
 
@@ -255,7 +317,6 @@ def devnet_deploy(paths):
     # Set up the base docker environment.
     docker_env = {
         'PWD': paths.ops_bedrock_dir,
-        'SEQUENCER_BATCH_INBOX_ADDRESS': batch_inbox_address
     }
 
     # Selectively set the L2OO_ADDRESS or DGF_ADDRESS if using L2OO.
@@ -294,6 +355,69 @@ def devnet_deploy(paths):
         log.info('Bringing up `da-server`, `sentinel`.') # TODO(10141): We don't have public sentinel images yet
         run_command(['docker', 'compose', 'up', '-d', 'da-server'], cwd=paths.ops_bedrock_dir, env=docker_env)
 
+
+def deploy_l2_interop(paths):
+    generate_l2_genesis(INTEROP_CHAIN_ID,
+                        paths.interop_genesis_l2_path, paths.interop_l1_deployments_path,
+                        paths.interop_devnet_config_path, paths.interop_addresses_json_path,
+                        paths.interop_rollup_config_path, paths, interop=True)
+    rollup_config = read_json(paths.interop_rollup_config_path)
+    addresses = read_json(paths.interop_addresses_json_path)
+
+    # Start the L2.
+    log.info('Bringing up L2.')
+    run_command(['docker', 'compose', 'up', '-d', 'l2-interop'], cwd=paths.ops_bedrock_dir, env={
+        'PWD': paths.ops_bedrock_dir
+    })
+
+    # Wait for the L2 to be available.
+    wait_up(10545)
+    wait_for_rpc_server('127.0.0.1:10545')
+
+    # Print out the addresses being used for easier debugging.
+    l2_output_oracle = addresses['L2OutputOracleProxy']
+    dispute_game_factory = addresses['DisputeGameFactoryProxy']
+    batch_inbox_address = rollup_config['batch_inbox_address']
+    log.info(f'Using L2OutputOracle {l2_output_oracle}')
+    log.info(f'Using DisputeGameFactory {dispute_game_factory}')
+    log.info(f'Using batch inbox {batch_inbox_address}')
+
+    # Set up the base docker environment.
+    docker_env = {
+        'PWD': paths.ops_bedrock_dir,
+    }
+
+    # Force fault proof and no plasma
+    docker_env['DGF_ADDRESS_INTEROP'] = dispute_game_factory
+    docker_env['DG_TYPE_INTEROP'] = '254'
+    docker_env['PROPOSAL_INTERVAL_INTEROP'] = '10s'
+    docker_env['PLASMA_ENABLED_INTEROP'] = 'false'
+    docker_env['PLASMA_DA_SERVICE_INTEROP'] = 'false'
+
+    # Bring up the rest of the services.
+    log.info('Bringing up `op-node-interop`, `op-proposer-interop` and `op-batcher-interop`.')
+    run_command(['docker', 'compose', 'up', '-d',
+                 'op-node-interop', 'op-proposer-interop', 'op-batcher-interop'],
+                cwd=paths.ops_bedrock_dir, env=docker_env)
+
+    # Optionally bring up op-challenger.
+    if not DEVNET_L2OO:
+        log.info('Bringing up `op-challenger-interop`.')
+        run_command(['docker', 'compose', 'up', '-d', 'op-challenger-interop'],
+                    cwd=paths.ops_bedrock_dir, env=docker_env)
+
+
+# Bring up the devnet where the contracts are deployed to L1
+def devnet_deploy(paths, interop=False):
+    log.info("Deploying L1 devnet.")
+    deploy_l1(paths)
+
+    log.info("Deploying L2 devnet.")
+    deploy_l2(paths)
+
+    if interop:
+        log.info("Deploying L2 interop devnet.")
+        deploy_l2_interop(paths)
     # Fin.
     log.info('Devnet ready.')
 
