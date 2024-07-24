@@ -564,19 +564,13 @@ jobs:
     resource_class: xlarge
     steps:
       - checkout
+      - check-changed:
+          patterns: contracts-bedrock,op-node
       - run:
           name: git submodules
           command: make submodules
-      - restore_cache:
-          name: Restore PNPM Package Cache
-          keys:
-            - pnpm-packages-v2-{{ checksum "pnpm-lock.yaml" }}
-      - attach_workspace: { at: "." }
-      - check-changed:
-          patterns: contracts-bedrock,op-node
       - setup_remote_docker:
           docker_layer_caching: true
-      # populate node modules from the cache
       - run:
           name: Install dependencies
           command: pnpm install
@@ -1509,9 +1503,7 @@ workflows:
           name: pnpm-monorepo
       - contracts-bedrock-tests
       - contracts-bedrock-coverage
-      - contracts-bedrock-checks:
-          requires:
-            - pnpm-monorepo
+      - contracts-bedrock-checks
       - contracts-bedrock-validate-spaces:
           requires:
             - pnpm-monorepo
