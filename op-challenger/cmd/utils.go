@@ -20,7 +20,7 @@ type ContractCreator[T any] func(context.Context, contractMetrics.ContractMetric
 
 func Interruptible(action cli.ActionFunc) cli.ActionFunc {
 	return func(ctx *cli.Context) error {
-		ctx.Context = opio.CancelOnInterrupt(ctx.Context)
+		ctx.Context = opio.WithCancelOnInterrupt(ctx.Context)
 		return action(ctx)
 	}
 }

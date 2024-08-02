@@ -116,9 +116,7 @@ func Main(cliCtx *cli.Context) error {
 		m.RecordUp()
 	}
 
-	opio.BlockOnInterrupts()
-
-	return nil
+	return opio.WaitForInterrupt(ctx)
 }
 
 // validateConfig ensures the minimal config required to run a bootnode

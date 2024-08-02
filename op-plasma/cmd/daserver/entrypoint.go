@@ -55,7 +55,5 @@ func StartDAServer(cliCtx *cli.Context) error {
 		}
 	}()
 
-	opio.BlockOnInterrupts()
-
-	return nil
+	return opio.WaitForInterrupt(cliCtx.Context)
 }

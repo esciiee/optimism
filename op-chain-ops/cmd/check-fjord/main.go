@@ -54,7 +54,7 @@ func makeCommandAction(fn CheckAction) func(c *cli.Context) error {
 		logCfg := oplog.ReadCLIConfig(c)
 		logger := oplog.NewLogger(c.App.Writer, logCfg)
 
-		c.Context = opio.CancelOnInterrupt(c.Context)
+		c.Context = opio.WithCancelOnInterrupt(c.Context)
 		l2Cl, err := ethclient.DialContext(c.Context, c.String(EndpointL2.Name))
 		if err != nil {
 			return fmt.Errorf("failed to dial L2 RPC: %w", err)

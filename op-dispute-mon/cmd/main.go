@@ -28,7 +28,7 @@ var VersionWithMeta = opservice.FormatVersion(version.Version, GitCommit, GitDat
 
 func main() {
 	args := os.Args
-	ctx := opio.WithInterruptBlocker(context.Background())
+	ctx := opio.WithSignalInterruptMain(context.Background())
 	if err := run(ctx, args, monitor.Main); err != nil {
 		log.Crit("Application failed", "err", err)
 	}

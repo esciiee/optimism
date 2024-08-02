@@ -29,7 +29,7 @@ var VersionWithMeta = opservice.FormatVersion(version.Version, GitCommit, GitDat
 
 func main() {
 	args := os.Args
-	ctx := opio.WithInterruptBlocker(context.Background())
+	ctx := opio.WithSignalInterruptMain(context.Background())
 	if err := run(ctx, args, func(ctx context.Context, l log.Logger, config *config.Config) (cliapp.Lifecycle, error) {
 		return challenger.Main(ctx, l, config, metrics.NewMetrics())
 	}); err != nil {

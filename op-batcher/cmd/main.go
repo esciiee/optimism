@@ -40,7 +40,7 @@ func main() {
 		},
 	}
 
-	ctx := opio.WithInterruptBlocker(context.Background())
+	ctx := opio.WithSignalInterruptMain(context.Background())
 	err := app.RunContext(ctx, os.Args)
 	if err != nil {
 		log.Crit("Application failed", "message", err)

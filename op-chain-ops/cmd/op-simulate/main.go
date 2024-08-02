@@ -81,7 +81,7 @@ func main() {
 }
 
 func mainAction(c *cli.Context) error {
-	ctx := opio.CancelOnInterrupt(c.Context)
+	ctx := opio.WithCancelOnInterrupt(c.Context)
 	logCfg := oplog.ReadCLIConfig(c)
 	logger := oplog.NewLogger(c.App.Writer, logCfg)
 
