@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"github.com/ethereum-optimism/optimism/op-service/opio"
+	"github.com/ethereum-optimism/optimism/op-service/ctxinterrupt"
 	"os"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
@@ -40,7 +40,7 @@ func main() {
 		},
 	}
 
-	ctx := opio.WithSignalInterruptMain(context.Background())
+	ctx := ctxinterrupt.WithSignalWaiterMain(context.Background())
 	err := app.RunContext(ctx, os.Args)
 	if err != nil {
 		log.Crit("Application failed", "message", err)

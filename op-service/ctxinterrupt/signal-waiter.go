@@ -1,4 +1,4 @@
-package opio
+package ctxinterrupt
 
 import (
 	"context"
@@ -16,12 +16,12 @@ var defaultSignals = []os.Signal{
 	syscall.SIGTERM,
 }
 
-type interruptSignalCatcher struct {
+type signalWaiter struct {
 	incoming chan os.Signal
 }
 
-func newSignalInterrupter() interruptSignalCatcher {
-	catcher := interruptSignalCatcher{
+func newSignalWaiter() signalWaiter {
+	catcher := signalWaiter{
 		// I'm not sure buffering these would have the intended effect beyond 1 as signals are
 		// generally emitted on timers and can't be relied on to deliver more than once in quick
 		// succession. It's not clear what the intention is if there are multiple concurrent waiters
@@ -32,21 +32,21 @@ func newSignalInterrupter() interruptSignalCatcher {
 	return catcher
 }
 
-func (me interruptSignalCatcher) Stop() {
+func (me signalWaiter) Stop() {
 	signal.Stop(me.incoming)
 }
 
 // Block blocks until either an interrupt signal is received, or the context is cancelled.
 // No error is returned on interrupt.
-func (me interruptSignalCatcher) waitForInterrupt(ctx context.Context) waitInterruptResult {
+func (me signalWaiter) waitForInterrupt(ctx context.Context) waitResult {
 	select {
 	case signalValue, ok := <-me.incoming:
 		if !ok {
 			// Signal channels are not closed.
 			panic("signal channel closed")
 		}
-		return waitInterruptResult{Interrupt: fmt.Errorf("received interrupt signal %v", signalValue)}
+		return waitResult{Interrupt: fmt.Errorf("received interrupt signal %v", signalValue)}
 	case <-ctx.Done():
-		return waitInterruptResult{CtxError: context.Cause(ctx)}
+		return waitResult{CtxError: context.Cause(ctx)}
 	}
 }

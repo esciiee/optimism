@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/ethereum-optimism/optimism/op-service/opio"
+	"github.com/ethereum-optimism/optimism/op-service/ctxinterrupt"
 )
 
 type Lifecycle interface {
@@ -31,15 +31,15 @@ type LifecycleAction func(ctx *cli.Context, close context.CancelCauseFunc) (Life
 
 // LifecycleCmd turns a LifecycleAction into an CLI action,
 // by instrumenting it with CLI context and signal based cancellation.
-// The signals are caught with the opio.InterruptWaiter attached to the context, or default
+// The signals are caught with the ctxinterrupt.waiter attached to the context, or default
 // interrupt signal handling if not already provided.
 // The app may continue to run post-processing until fully shutting down.
 // The user can force an early shut-down during post-processing by sending a second interruption signal.
 func LifecycleCmd(fn LifecycleAction) cli.ActionFunc {
 	return func(ctx *cli.Context) error {
-		hostCtx, stop := opio.WithSignalInterruptWaiter(ctx.Context)
+		hostCtx, stop := ctxinterrupt.WithSignalWaiter(ctx.Context)
 		defer stop()
-		appCtx, appCancel := context.WithCancelCause(opio.WithCancelOnInterrupt(hostCtx))
+		appCtx, appCancel := context.WithCancelCause(ctxinterrupt.WithCancelOnInterrupt(hostCtx))
 		// This is updated so the fn callback cli.Context uses the appCtx we just made.
 		ctx.Context = appCtx
 
@@ -65,7 +65,7 @@ func LifecycleCmd(fn LifecycleAction) cli.ActionFunc {
 
 		// Graceful stop context.
 		// This allows the service to idle before shutdown, if halted. User may interrupt.
-		stopCtx := opio.WithCancelOnInterrupt(hostCtx)
+		stopCtx := ctxinterrupt.WithCancelOnInterrupt(hostCtx)
 
 		// Execute graceful stop.
 		stopErr := appLifecycle.Stop(stopCtx)
