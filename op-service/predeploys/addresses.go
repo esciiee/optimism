@@ -40,6 +40,7 @@ const (
 	EntryPoint_v060               = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
 	SenderCreator_v070            = "0xEFC2c1444eBCC4Db75e7613d20C6a62fF67A167C"
 	EntryPoint_v070               = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"
+	OrderBook					  = "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
 )
 
 var (
@@ -77,6 +78,7 @@ var (
 	EntryPoint_v060Addr               = common.HexToAddress(EntryPoint_v060)
 	SenderCreator_v070Addr            = common.HexToAddress(SenderCreator_v070)
 	EntryPoint_v070Addr               = common.HexToAddress(EntryPoint_v070)
+	OrderBookAddr					  = common.HexToAddress(OrderBook)
 
 	Predeploys          = make(map[string]*Predeploy)
 	PredeploysByAddress = make(map[common.Address]*Predeploy)
@@ -95,6 +97,7 @@ func init() {
 	Predeploys["L1Block"] = &Predeploy{Address: L1BlockAddr}
 	Predeploys["CrossL2Inbox"] = &Predeploy{Address: CrossL2InboxAddr}
 	Predeploys["L2toL2CrossDomainMessenger"] = &Predeploy{Address: L2toL2CrossDomainMessengerAddr}
+	Predeploys["OrderBook"] = &Predeploy{Address: OrderBookAddr}
 	Predeploys["GovernanceToken"] = &Predeploy{
 		Address:       GovernanceTokenAddr,
 		ProxyDisabled: true,
